@@ -5,22 +5,25 @@ hidden states of a frozen causal LM before the frozen `lm_head`. This repo imple
 module, the 5x / 10x / 50x training tiers, an A -> B -> C dataset format with a synthetic
 generator, and a depth-sweep evaluation harness.
 
+![Looped Transformer Head Performance Gains](assets/looping_gains.png)
+
 ```
 lth/head.py             the looped block: first-pass KV reuse, step embeddings, zero-init gate,
-                        truncated BPTT, gradient checkpointing, 1x KV cache for decoding
+                        QK-norm, output RMSNorm, truncated BPTT, gradient checkpointing, 1x KV cache
 lth/model.py            frozen backbone + head: loss, cached greedy decoding, head checkpoints
-lth/data.py             A -> B -> C schema, three synthetic task families, scoring, tokenisation
-lth/train.py            tiers 1x (control) / 2x / 3x / 5x / 10x / 50x, backbone hidden-state cache
+lth/data.py             A -> B -> C schema, four synthetic task families, scoring, tokenisation
+lth/train.py            tiers 1x (control) / 2x / 3x / 5x / 10x / 50x, WSD/cosine, hidden-state cache
 lth/evaluate.py         depth sweep, latency, general-text regression, acceptance report
 lth/probe.py            decodes every loop: which hop's answer does the head hold?
 lth/general_prompts.py  built-in passages for the regression check
 lth/tiny.py             offline random model + char tokenizer for smoke tests
 scripts/demo_small.sh   the small end-to-end run reported below
 scripts/lookup_ladder.sh  1x vs 2x vs 3x on lookup-only data (second experiment below)
-scripts/chain_ladder.sh   per-loop supervision vs final-answer-only (third experiment below)
+scripts/chain_ladder.sh   per-loop supervision vs final-answer-only (third/fourth experiments below)
 scripts/feature_probe.py  linear probes: which backbone layer holds what a lookup needs
+scripts/plot_results.py   regenerates the README figures under assets/ from saved reports/logs
 scripts/run_capped.sh     runs a job under a memory cap, one at a time (use it for every run)
-tests/                  49 tests; `python3 -m pytest`
+tests/                  52 tests; `python3 -m pytest`
 ```
 
 ## Usage
@@ -332,6 +335,8 @@ Auditing the earlier runs found no sabotage, but isolated four coupled optimisat
 3. **Unnormalised residual drift across loops:** adding `--norm-out` (`RMSNorm` on `x - z0` before `proj_out`) kept single-pass heads stable when evaluated beyond trained depth (`1x-plain` on `data/names`: `0.363 -> 0.357 -> 0.360` at `R=1,2,3`, vs `0.350 -> 0.283 -> 0.263` previously).
 4. **Phase transition timing and capacity:** narrowing to `--head-dim 256 --num-heads 8 --num-layers 2` (2.07M params), running in fp32 (`--amp none`), using `--weight-decay 0.05`, and holding LR with `--schedule wsd` allowed a 1-hop head on `data/names1` (`runs/names_curr/pretrain-1hop-wd05`) to cross the induction-head phase transition between steps 3000 and 5000, reaching **0.967 validation accuracy** (`val_loss = 0.0172`).
 
+![1-Hop Induction-Head Phase Transition](assets/phase_transition.png)
+
 **Matched curriculum comparison on 1–3 hop `data/names` (`runs/names_curr_v2`, `n = 600` test):** both `1x-plain` (`R=1` control) and `3x-chain` (`R=3`, chain-supervised) were initialised from that same 96.7% 1-hop checkpoint (`--init-from`) and trained identically for 3500 steps (`batch_size=32 x grad_accum=2`, `lr=3e-4`, `weight_decay=0.05`, `--schedule wsd`).
 
 | Head | R | Accuracy | vs R=0 | 1 hop | 2 hops | 3 hops | Verdict |
@@ -345,4 +350,7 @@ Auditing the earlier runs found no sabotage, but isolated four coupled optimisat
 - **`looping beats single-pass control`: PASS** (`3x-chain` at `R=3`: `0.533` vs `1x-plain` at `R=1`: `0.485`, exact McNemar `p = 0.007`).
 - **Per-loop probe (`runs/names_curr_v2/probe/probe.md`):** on 2-hop and 3-hop questions, `3x-chain` holds hop 1 at **0.916 / 0.908** after loop 1, then begins resolving hop 2 at loop 2 (`0.404` / `0.374`) and hop 3 at loop 3 (`0.233`). Validation loss was still dropping sharply (`0.2450 -> 0.2333 -> 0.2186`) when LR decayed at step 3000–3500, indicating hop 2 and hop 3 were mid-transition.
 
+![Per-Loop Latent State Decoding](assets/per_loop_probe.png)
+
+Regenerate all figures from the saved reports and logs with `python3 scripts/plot_results.py`.
 Full tables: `runs/names_curr_v2/report/report.md` and `runs/names_curr_v2/probe/probe.md`.
