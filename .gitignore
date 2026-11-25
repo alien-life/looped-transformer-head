@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.lth-job.lock
+
+# Large generated datasets, hidden-state caches, model weights, and raw prediction dumps
+data/
+*.pt
+*.npy
+runs/**/hidden_*/
+runs/**/predictions/
+runs/**/*.log

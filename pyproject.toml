@@ -1,0 +1,21 @@
+[project]
+name = "lth"
+version = "0.1.0"
+description = "Looped Transformer Head: a trainable recurrent head on a frozen causal LM"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.4",          # nn.RMSNorm
+    "transformers>=4.40",  # Gemma 3 backbones need >=4.50
+    "accelerate>=0.30",
+]
+
+[project.optional-dependencies]
+quant = ["bitsandbytes"]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["lth"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
